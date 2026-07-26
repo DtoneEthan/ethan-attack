@@ -56,6 +56,7 @@
       📱 手机：手指拖动战机移动，自动开火<br>
       💻 电脑：方向键 / WASD 移动，自动开火<br>
       💣 点击左下「BOMB」清屏，右上「⏸」暂停<br>
+      🎵 按 <b>M</b> 静音（背景音乐 + 音效）<br>
       🛡 拾取道具升级武器 / 护盾 / 炸弹
     </div>
   </div>
@@ -93,7 +94,10 @@ window.addEventListener('resize', fit); fit();
 
 // ---------- Audio (tiny synth) ----------
 let actx = null, muted = false;
-function initAudio(){ if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} } }
+function initAudio(){
+  if(!actx){ try{ actx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} }
+  if(actx && actx.state==='suspended'){ try{ actx.resume(); }catch(e){} }
+}
 function beep(freq, dur, type, vol){
   if(muted || !actx) return;
   try{
@@ -112,6 +116,80 @@ const sfx = {
   pow:   ()=>beep(660,0.12,'triangle',0.07),
   bomb:  ()=>beep(60,0.5,'sawtooth',0.09),
 };
+
+// ---------- BGM: 原创「星战风」史诗配乐 (WebAudio 现场合成, 无版权风险) ----------
+const NM = { D2:73.42,A2:110.00,Bb2:116.54,C3:130.81,Bb3:233.08,A3:220.00,
+  D4:293.66,E4:329.63,F4:349.23,G4:392.00,A4:440.00,Bb4:466.16,C5:523.25,E5:659.25 };
+const BEAT = 0.5;            // 每拍秒数 → 120 BPM
+const MELODY = [            // 英雄主题 (原创, D 小调)
+  ['D4',1],['F4',1],['A4',2],
+  ['G4',1],['F4',1],['E4',2],
+  ['F4',1],['A4',1],['G4',1],['F4',1],
+  ['E4',1],['F4',1],['D4',2],
+];
+const BASS = ['D2','D2','A2','A2','Bb2','Bb2','A2','A2','D2','D2','C3','C3','D2','D2','A2','A2'];
+const CHORDS = [ ['D4','F4','A4'], ['Bb3','D4','F4'], ['A3','C4','E4'], ['D4','F4','A4'] ];
+
+let bgmStarted=false, bgmTimer=null, bgmGain=null, nextNoteTime=0, beat=0;
+function startBGM(){
+  if(!actx || bgmStarted) return;
+  bgmStarted=true;
+  bgmGain = actx.createGain(); bgmGain.gain.value = muted?0:0.5; bgmGain.connect(actx.destination);
+  nextNoteTime = actx.currentTime + 0.15; beat=0;
+  bgmTimer = setInterval(scheduleBGM, 25);
+}
+function stopBGM(){
+  bgmStarted=false;
+  if(bgmTimer){ clearInterval(bgmTimer); bgmTimer=null; }
+  if(bgmGain){ const g=bgmGain; bgmGain=null; try{ g.gain.setTargetAtTime(0, actx.currentTime, 0.12); }catch(e){} setTimeout(()=>{ try{ g.disconnect(); }catch(e){} }, 400); }
+}
+function scheduleBGM(){
+  if(!actx || !bgmStarted) return;
+  if(muted || state!==STATE.PLAY){ nextNoteTime = Math.max(nextNoteTime, actx.currentTime+0.05); return; }
+  const lookahead=0.2;
+  while(nextNoteTime < actx.currentTime + lookahead){
+    const i = beat % MELODY.length;
+    const note = MELODY[i][0], beats = MELODY[i][1], freq = NM[note];
+    if(freq) playBrass(freq, nextNoteTime, beats*BEAT*0.92, 0.22);
+    const bf = NM[BASS[beat % BASS.length]];
+    if(bf) playBass(bf, nextNoteTime, Math.max(0.18, beats*BEAT*0.9), 0.32);
+    if(beat % 2 === 0) playKick(nextNoteTime, 0.18);
+    if(beat % 4 === 0){ const ch=CHORDS[Math.floor(beat/4)%CHORDS.length]; playPad(ch, nextNoteTime, 4*BEAT*0.95, 0.05); }
+    nextNoteTime += beats*BEAT; beat += beats;
+  }
+}
+function playBrass(freq, t, dur, vol){
+  const o=actx.createOscillator(), o2=actx.createOscillator(), g=actx.createGain(), f=actx.createBiquadFilter();
+  o.type='sawtooth'; o2.type='sawtooth'; o.frequency.value=freq; o2.frequency.value=freq; o2.detune.value=9;
+  f.type='lowpass'; f.frequency.setValueAtTime(1100,t); f.frequency.exponentialRampToValueAtTime(2700,t+dur*0.5);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.04);
+  g.gain.setValueAtTime(vol,t+dur*0.6); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(f); o2.connect(f); f.connect(g); g.connect(bgmGain);
+  o.start(t); o2.start(t); o.stop(t+dur+0.05); o2.stop(t+dur+0.05);
+}
+function playBass(freq,t,dur,vol){
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type='triangle'; o.frequency.value=freq;
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(bgmGain); o.start(t); o.stop(t+dur+0.05);
+}
+function playKick(t,vol){
+  const o=actx.createOscillator(), g=actx.createGain();
+  o.type='sine'; o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(45,t+0.12);
+  g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+  o.connect(g); g.connect(bgmGain); o.start(t); o.stop(t+0.2);
+}
+function playPad(freqs,t,dur,vol){
+  const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=1700; f.connect(bgmGain);
+  for(const fr of freqs){
+    const o=actx.createOscillator(), g=actx.createGain();
+    o.type='sawtooth'; o.frequency.value=fr; o.detune.value=(Math.random()*8-4);
+    g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.3);
+    g.gain.setValueAtTime(vol,t+dur*0.7); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+    o.connect(g); g.connect(f); o.start(t); o.stop(t+dur+0.05);
+  }
+}
 
 // ---------- State ----------
 const STATE = { MENU:'menu', PLAY:'play', PAUSE:'pause', OVER:'over', WIN:'win' };
@@ -173,7 +251,7 @@ window.addEventListener('keydown', e=>{
   if(k==='arrowright'||k==='d') keys.right=true;
   if(k==='b') useBomb();
   if(k==='p') togglePause();
-  if(k==='m'){ muted=!muted; }
+  if(k==='m'){ muted=!muted; if(bgmGain) bgmGain.gain.value = muted?0:0.5; }
   if((k==='enter')&&(state===STATE.MENU||state===STATE.OVER||state===STATE.WIN)) startGame();
   if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
 });
@@ -188,6 +266,7 @@ window.addEventListener('keyup', e=>{
 // ---------- Game flow ----------
 function startGame(){
   initAudio();
+  startBGM();
   score=0; level=1; lives=3; bombs=2; weapon=1; shield=0;
   killedThisLevel=0; bossActive=false; boss=null; spawnTimer=0; intermission=0;
   pBullets.length=0; eBullets.length=0; enemies.length=0; parts.length=0; powers.length=0;
@@ -203,6 +282,7 @@ function togglePause(){
 }
 function gameOver(){
   state=STATE.OVER;
+  stopBGM();
   if(score>best){ best=score; localStorage.setItem('sw_best',best); }
   document.getElementById('finalScore').textContent=score;
   document.getElementById('finalLevel').textContent=level;
@@ -514,6 +594,9 @@ function drawHUD(){
   ctx.textAlign='right'; ctx.fillStyle='#ff8a9a'; ctx.font='bold 14px sans-serif';
   ctx.fillText('♥'.repeat(Math.max(0,lives))+'♡'.repeat(Math.max(0,3-lives)), W-54, 26);
   ctx.fillStyle='#ffd76a'; ctx.fillText('武器 Lv'+weapon, W-54, 44);
+  // music indicator
+  ctx.textAlign='left'; ctx.fillStyle = muted ? '#5a6a82' : '#7fe0ff'; ctx.font='14px sans-serif';
+  ctx.fillText(muted ? '♪✕' : '♪', 12, 60);
   // boss bar
   if(boss){
     const bw=W-40, bh=10, bx=20, by=54;
