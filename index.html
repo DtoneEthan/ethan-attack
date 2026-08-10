@@ -84,6 +84,10 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 canvas.width = W; canvas.height = H;
 
+// Boss image: zombie2.png will be the Level 1 boss
+const bossImg = new Image();
+bossImg.src = 'zombie2.png';
+
 function fit(){
   const sw = window.innerWidth, sh = window.innerHeight;
   const scale = Math.min(sw / W, sh / H);
@@ -454,8 +458,9 @@ function update(dt){
     if(!b.entered){ b.y+=120*dt; if(b.y>=110){ b.y=110; b.entered=true; } }
     else {
       b.x += b.vx*dt;
-      if(b.x<70){ b.x=70; b.vx=Math.abs(b.vx); }
-      if(b.x>W-70){ b.x=W-70; b.vx=-Math.abs(b.vx); }
+      const margin = level===1 ? 80 : 70;
+      if(b.x<margin){ b.x=margin; b.vx=Math.abs(b.vx); }
+      if(b.x>W-margin){ b.x=W-margin; b.vx=-Math.abs(b.vx); }
       b.fireT-=dt; b.pT-=dt;
       if(b.fireT<=0){
         b.fireT = Math.max(0.5, 1.1 - level*0.05);
@@ -548,13 +553,20 @@ function drawTIE(e){
 }
 function drawBoss(b){
   ctx.save(); ctx.translate(b.x,b.y);
-  ctx.fillStyle='#5b6580';
-  ctx.beginPath(); ctx.moveTo(0,-50); ctx.lineTo(55,-10); ctx.lineTo(50,40); ctx.lineTo(-50,40); ctx.lineTo(-55,-10); ctx.closePath(); ctx.fill();
-  ctx.fillStyle='#3a4256'; ctx.fillRect(-58,-14,18,30); ctx.fillRect(40,-14,18,30);
-  ctx.fillStyle='#2a3148'; ctx.fillRect(-30,10,60,24);
-  ctx.fillStyle='#ff5a6e'; for(let i=-1;i<=1;i++){ ctx.fillRect(i*22-5,12,10,16); }
-  ctx.fillStyle='#1a1f2e'; ctx.beginPath(); ctx.arc(0,-8,16,0,7); ctx.fill();
-  ctx.fillStyle='#ffd76a'; ctx.beginPath(); ctx.arc(0,-8,7,0,7); ctx.fill();
+  if(level===1 && bossImg.complete && bossImg.naturalWidth){
+    // Level 1 Boss: zombie
+    const iw=bossImg.width, ih=bossImg.height;
+    ctx.drawImage(bossImg, -iw/2, -ih/2, iw, ih);
+  } else {
+    // Default mechanical boss for later levels
+    ctx.fillStyle='#5b6580';
+    ctx.beginPath(); ctx.moveTo(0,-50); ctx.lineTo(55,-10); ctx.lineTo(50,40); ctx.lineTo(-50,40); ctx.lineTo(-55,-10); ctx.closePath(); ctx.fill();
+    ctx.fillStyle='#3a4256'; ctx.fillRect(-58,-14,18,30); ctx.fillRect(40,-14,18,30);
+    ctx.fillStyle='#2a3148'; ctx.fillRect(-30,10,60,24);
+    ctx.fillStyle='#ff5a6e'; for(let i=-1;i<=1;i++){ ctx.fillRect(i*22-5,12,10,16); }
+    ctx.fillStyle='#1a1f2e'; ctx.beginPath(); ctx.arc(0,-8,16,0,7); ctx.fill();
+    ctx.fillStyle='#ffd76a'; ctx.beginPath(); ctx.arc(0,-8,7,0,7); ctx.fill();
+  }
   ctx.restore();
 }
 function drawPower(pw){
